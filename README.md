@@ -77,7 +77,7 @@ The generated SQLite database contains the following tables:
 - `idx_meaning` - Meaning-based searches
 - **Unique indexes** prevent duplicates:
   - `ux_reading` - (literal, type, reading)
-  - `ux_meaning` - (literal, meaning)  
+  - `ux_meaning` - (literal, meaning)
   - `ux_radical` - (literal, rad_value)
   - `ux_variant` - (literal, var_type, value)
 
@@ -203,7 +203,7 @@ ORDER BY k.freq;
 ```sql
 -- Get top 10 priority kanji for learning
 SELECT literal, readings_on, readings_kun, meanings_en, priority_score
-FROM kanji_priority 
+FROM kanji_priority
 LIMIT 10;
 
 -- Export-ready data
@@ -211,13 +211,13 @@ SELECT * FROM kanji_seed WHERE grade = 1 LIMIT 20;
 
 -- Find similar kanji for quiz distractors
 SELECT neighbor, neighbor_strokes, stroke_diff
-FROM kanji_stroke_neighbors 
-WHERE kanji = '水' 
+FROM kanji_stroke_neighbors
+WHERE kanji = '水'
 ORDER BY stroke_diff, neighbor_strokes;
 
 -- Find kanji sharing radicals
 SELECT neighbor, shared_radical
-FROM kanji_radical_neighbors 
+FROM kanji_radical_neighbors
 WHERE kanji = '水';
 ```
 
