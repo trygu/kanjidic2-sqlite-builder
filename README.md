@@ -44,6 +44,63 @@ The database is automatically rebuilt whenever changes are made to the codebase.
 
 The generated SQLite database contains the following tables:
 
+```mermaid
+erDiagram
+    kanji {
+        TEXT literal PK "The kanji character"
+        INTEGER grade "School grade (1-6, 8)"
+        INTEGER stroke_count "Number of strokes"
+        INTEGER freq "Frequency rank (1=most common)"
+        INTEGER jlpt "JLPT level"
+    }
+
+    kanji_radical {
+        TEXT literal FK "The kanji character"
+        TEXT rad_value "Classical radical number"
+    }
+
+    kanji_reading {
+        TEXT literal FK "The kanji character"
+        TEXT type "Reading type: on/kun"
+        TEXT reading "The actual reading"
+    }
+
+    kanji_meaning {
+        TEXT literal FK "The kanji character"
+        TEXT lang "Language code (en)"
+        TEXT meaning "English meaning"
+    }
+
+    kanji_variant {
+        TEXT literal FK "The kanji character"
+        TEXT var_type "Variant type"
+        TEXT value "Variant value"
+    }
+
+    kanji_priority {
+        TEXT literal PK "View: priority sorted kanji"
+        INTEGER priority_score "Calculated learning priority"
+        TEXT readings_on "Semicolon-separated on readings"
+        TEXT readings_kun "Semicolon-separated kun readings"
+        TEXT meanings_en "Semicolon-separated meanings"
+    }
+
+    kanji_seed {
+        TEXT literal PK "View: export-ready format"
+        TEXT readings_on "Semicolon-separated on readings"
+        TEXT readings_kun "Semicolon-separated kun readings"
+        TEXT meanings_en "Semicolon-separated meanings"
+        INTEGER freq "Frequency rank"
+        INTEGER grade "School grade"
+        INTEGER jlpt "JLPT level"
+    }
+
+    kanji ||--o{ kanji_radical : contains
+    kanji ||--o{ kanji_reading : has
+    kanji ||--o{ kanji_meaning : means
+    kanji ||--o{ kanji_variant : variants
+```
+
 ### Core Tables
 - **`kanji`** - Main kanji information
   - `literal` (PRIMARY KEY) - The kanji character
