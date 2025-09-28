@@ -36,18 +36,35 @@ jobs:
           mkdir -p out
           k2sqlite build --input data/kanjidic2.xml --db out/kanjidic2.sqlite
 
-      - name: Verify database
+      - name: Generate production artifacts
+        run: |
+          # Generate comprehensive artifact package
+          k2sqlite artifacts --db out/kanjidic2.sqlite --output-dir out/artifacts --seed-limit 500 --version "${{ github.ref_name || github.sha }}"
+
+      - name: Verify database and artifacts
         run: |
           # Basic verification that database was created and has data
           sqlite3 out/kanjidic2.sqlite "SELECT COUNT(*) as kanji_count FROM kanji;"
           sqlite3 out/kanjidic2.sqlite "SELECT COUNT(*) as reading_count FROM kanji_reading;"
           sqlite3 out/kanjidic2.sqlite "SELECT COUNT(*) as meaning_count FROM kanji_meaning;"
 
+          # Verify artifacts were generated
+          ls -la out/artifacts/
+          echo "Checking manifest..."
+          cat out/artifacts/manifest.json | head -10
+
       - name: Upload SQLite database as artifact
         uses: actions/upload-artifact@v4
         with:
           name: kanjidic2-sqlite-${{ github.sha }}
           path: out/kanjidic2.sqlite
+          retention-days: 90
+
+      - name: Upload production artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kanjidic2-artifacts-${{ github.sha }}
+          path: out/artifacts/
           retention-days: 90
 
       - name: Upload database for releases
@@ -60,3 +77,21 @@ jobs:
           asset_path: out/kanjidic2.sqlite
           asset_name: kanjidic2.sqlite
           asset_content_type: application/x-sqlite3
+
+      - name: Create artifacts archive for release
+        if: github.event_name == 'release'
+        run: |
+          cd out/artifacts
+          tar -czf ../kanjidic2-artifacts.tar.gz .
+          cd ../..
+
+      - name: Upload artifacts archive for releases
+        if: github.event_name == 'release'
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: out/kanjidic2-artifacts.tar.gz
+          asset_name: kanjidic2-artifacts.tar.gz
+          asset_content_type: application/gzip

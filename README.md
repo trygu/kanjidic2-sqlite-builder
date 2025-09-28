@@ -12,6 +12,9 @@ A fast, memory-efficient tool for converting KANJIDIC2 XML data into a normalize
 - **Data Quality**: Automatic deduplication and unique indexes prevent duplicate data
 - **Foundation-First**: Provides solid database foundation for any kanji application
 - **Export Support**: Basic CSV/JSON export for development and prototyping
+- **Production Artifacts**: Generate complete packages with seed files, lookup maps, and manifest
+- **Automated CI/CD**: GitHub Actions pipeline with comprehensive artifact generation and testing
+- **Utility Scripts**: Schema documentation, specialized lookups, MCQ generation, and manifest tools
 
 ## Quick Start
 
@@ -32,11 +35,14 @@ Instead of building the database yourself, you can download a pre-built SQLite d
 ### From GitHub Releases
 1. Go to the [Releases page](https://github.com/trygu/kanjidic2-sqlite-builder/releases)
 2. Download `kanjidic2.sqlite` from the latest release
+3. **NEW**: Also available - `kanjidic2-artifacts.tar.gz` containing the complete production package
 
 ### From CI Artifacts (Latest Build)
 1. Go to [Actions](https://github.com/trygu/kanjidic2-sqlite-builder/actions)
 2. Click on the latest successful build
-3. Download the `kanjidic2-sqlite-*` artifact
+3. Download artifacts:
+   - `kanjidic2-sqlite-*` - Just the SQLite database
+   - `kanjidic2-artifacts-*` - Complete production package with seed files, lookup maps, and manifest
 
 The database is automatically rebuilt whenever changes are made to the codebase.
 
@@ -184,26 +190,136 @@ k2sqlite export --db output/kanjidic2.sqlite --view kanji_seed --format csv | he
 - Quiz question generation
 - Learning algorithms
 - UI-specific data formatting
-- Caching and performance optimizationExport Options:
+- Caching and performance optimization
+
+Export Options:
 - `--db`, `-d` - SQLite database path (required)
 - `--view`, `-v` - View to export: `kanji_seed` or `kanji_priority` (default: kanji_seed)
 - `--format`, `-f` - Output format: `csv` or `json` (default: csv)
 - `--output`, `-o` - Output file path (default: stdout)
 - `--limit`, `-l` - Limit number of records exported
 
+### Generate Production Artifacts
+
+The artifacts command generates a complete package of production-ready files for distribution:
+
+```bash
+# Generate all artifacts with default 200 kanji seed files
+k2sqlite artifacts --db output/kanjidic2.sqlite --output-dir dist/
+
+# Generate artifacts with custom seed limit and version
+k2sqlite artifacts --db output/kanjidic2.sqlite --output-dir releases/v1.0 --seed-limit 500 --version "v1.0.0"
+```
+
+**Generated Files**:
+- `kanjidic2.sqlite` - Complete database copy
+- `kanji_seed.csv` - Top N kanji by frequency (CSV format)
+- `kanji_seed.json` - Top N kanji by frequency (JSON format)
+- `map_char_to_meaning.json` - Character → meanings lookup map
+- `map_char_to_readings.json` - Character → readings lookup map
+- `manifest.json` - File inventory with SHA256 checksums
+
+Artifacts Options:
+- `--db`, `-d` - SQLite database path (required)
+- `--output-dir`, `-o` - Output directory (default: artifacts/)
+- `--seed-limit`, `-l` - Number of kanji in seed files (default: 200)
+- `--version`, `-v` - Version string for manifest (default: local-build)
+
+### MCQ Generator (Bonus Tool)
+
+Generate multiple-choice quiz questions from the database using the included script:
+
+```bash
+# Generate 50 questions of each type using top 500 kanji
+python scripts/generate_mcq.py --db output/kanjidic2.sqlite --count 50 --output quiz_data --kanji-limit 500
+```
+
+**Generated Question Types**:
+- Meaning → Character ("What kanji means 'water'?")
+- Character → Meaning ("What does 水 mean?")
+- Character → Kun Reading ("How do you read 水 (kun)?")
+- Character → On Reading ("How do you read 水 (on)?")
+
+**Output Files**:
+- `all_questions.json` - All questions combined
+- `meaning_to_char.json` - Meaning to character questions
+- `char_to_meaning.json` - Character to meaning questions
+- `kun_readings.json` - Kun reading questions
+- `on_readings.json` - On reading questions
+
+## Utility Scripts
+
+The `scripts/` directory contains additional tools for specialized data generation and analysis:
+
+### Schema Documentation Generator
+Generate comprehensive database schema documentation:
+
+```bash
+python scripts/generate_schema_docs.py --db output/kanjidic2.sqlite --output docs/
+```
+
+**Generated Files**:
+- `DATABASE_SCHEMA.md` - Complete schema documentation with sample data
+- `SQL_EXAMPLES.md` - Practical SQL query examples with results
+- `schema.json` - Machine-readable schema definition
+
+### Specialized Lookup Generator
+Create targeted datasets for specific use cases:
+
+```bash
+# Generate all lookup categories
+python scripts/generate_lookups.py --db output/kanjidic2.sqlite --output lookups/
+
+# Generate only specific categories
+python scripts/generate_lookups.py --db output/kanjidic2.sqlite --categories grades jlpt
+```
+
+**Generated Categories**:
+- `grades/` - Kanji by school grade levels (1-6)
+- `jlpt/` - Kanji by JLPT levels (N5-N1)
+- `frequency/` - Kanji by frequency rankings (top 100, 500, 1000, 2000)
+- `readings/` - Kanji grouped by reading patterns
+
+### Manifest Generator
+Create detailed file manifests with checksums and metadata:
+
+```bash
+# Basic manifest
+python scripts/generate_manifest.py --dir artifacts/ --version "v1.0.0"
+
+# Include SHA256 checksums and API manifest
+python scripts/generate_manifest.py --dir artifacts/ --include-checksums --api-manifest
+```
+
+**Generated Files**:
+- `manifest.json` - Complete file inventory with metadata and optional checksums
+- `api_manifest.json` - API-focused manifest for web services
+
 ## Automated Builds
 
-This project uses GitHub Actions to automatically build and test the SQLite database:
+This project uses GitHub Actions to automatically build and test the SQLite database with full production artifacts:
 
-- **On every push/PR**: Database is built and tested for quality
-- **On releases**: Database artifact is attached to the GitHub release
+- **On every push/PR**: Database is built, tested, and production artifacts generated
+- **On releases**: Database and complete artifact package attached to GitHub releases
 - **Manual triggers**: You can manually trigger builds from the Actions tab
 
 ### CI/CD Features:
 - ✅ **Automated Testing**: Runs full test suite
 - ✅ **Database Validation**: Verifies row counts and data integrity
-- ✅ **Artifact Storage**: SQLite database stored as downloadable artifact
+- ✅ **Artifact Generation**: Complete production package with seed files, lookup maps, and manifest
+- ✅ **Dual Artifacts**: Both individual database file and comprehensive artifact package
 - ✅ **Release Assets**: Automatic attachment to GitHub releases
+- ✅ **Version Tracking**: Artifacts include version information and SHA256 checksums
+
+### Generated CI Artifacts:
+- `kanjidic2.sqlite` - The core database file
+- `kanjidic2-artifacts/` - Complete production package containing:
+  - `kanjidic2.sqlite` - Database copy
+  - `kanji_seed.csv` - Top 500 kanji (CSV format)
+  - `kanji_seed.json` - Top 500 kanji (JSON format)
+  - `map_char_to_meaning.json` - Character → meanings lookup
+  - `map_char_to_readings.json` - Character → readings lookup
+  - `manifest.json` - File inventory with SHA256 checksums
 
 ## Development
 

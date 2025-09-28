@@ -2,6 +2,8 @@ from __future__ import annotations
 import argparse
 import json
 import sqlite3
+import hashlib
+import os
 from pathlib import Path
 from .builder import build_sqlite
 
@@ -54,6 +56,119 @@ def export_data(
     conn.close()
 
 
+def generate_lookup_maps(db_path: Path, output_dir: Path):
+    """Generate char-to-meaning and char-to-reading lookup maps."""
+    conn = sqlite3.connect(db_path)
+
+    # Char to meaning map
+    meanings_map = {}
+    for (literal,) in conn.execute("SELECT literal FROM kanji"):
+        meanings = [
+            row[0]
+            for row in conn.execute(
+                "SELECT meaning FROM kanji_meaning WHERE literal=? AND lang='en'",
+                (literal,),
+            )
+        ]
+        meanings_map[literal] = meanings
+
+    with open(output_dir / "map_char_to_meaning.json", "w", encoding="utf-8") as f:
+        json.dump(meanings_map, f, ensure_ascii=False, indent=2)
+
+    # Char to readings map
+    readings_map = {}
+    for (literal,) in conn.execute("SELECT literal FROM kanji"):
+        on_readings = [
+            row[0]
+            for row in conn.execute(
+                "SELECT reading FROM kanji_reading WHERE literal=? AND type='on'",
+                (literal,),
+            )
+        ]
+        kun_readings = [
+            row[0]
+            for row in conn.execute(
+                "SELECT reading FROM kanji_reading WHERE literal=? AND type='kun'",
+                (literal,),
+            )
+        ]
+        readings_map[literal] = {"on": on_readings, "kun": kun_readings}
+
+    with open(output_dir / "map_char_to_readings.json", "w", encoding="utf-8") as f:
+        json.dump(readings_map, f, ensure_ascii=False, indent=2)
+
+    conn.close()
+    print("Generated lookup maps")
+
+
+def generate_manifest(output_dir: Path, version: str = None):
+    """Generate manifest.json with file checksums."""
+    artifact_files = [
+        "kanji_seed.csv",
+        "kanji_seed.json",
+        "map_char_to_meaning.json",
+        "map_char_to_readings.json",
+        "kanjidic2.sqlite",
+    ]
+
+    def sha256_file(filepath):
+        h = hashlib.sha256()
+        with open(filepath, "rb") as f:
+            for chunk in iter(lambda: f.read(65536), b""):
+                h.update(chunk)
+        return h.hexdigest()
+
+    manifest = {"version": version or "local-build", "files": []}
+
+    for filename in artifact_files:
+        filepath = output_dir / filename
+        if filepath.exists():
+            manifest["files"].append(
+                {
+                    "name": filename,
+                    "bytes": filepath.stat().st_size,
+                    "sha256": sha256_file(filepath),
+                }
+            )
+
+    with open(output_dir / "manifest.json", "w") as f:
+        json.dump(manifest, f, indent=2)
+
+    print(f"Generated manifest.json with {len(manifest['files'])} files")
+
+
+def generate_artifacts(
+    db_path: Path, output_dir: Path, seed_limit: int = 200, version: str = None
+):
+    """Generate all production artifacts."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"Generating artifacts in {output_dir}")
+
+    # Copy database to output dir
+    import shutil
+
+    db_dest = output_dir / "kanjidic2.sqlite"
+    shutil.copy2(db_path, db_dest)
+    print(f"Copied database to {db_dest}")
+
+    # Generate seed files
+    seed_csv = output_dir / "kanji_seed.csv"
+    seed_json = output_dir / "kanji_seed.json"
+
+    export_data(db_path, "kanji_seed", "csv", seed_csv, seed_limit)
+    export_data(db_path, "kanji_seed", "json", seed_json, seed_limit)
+
+    # Generate lookup maps
+    generate_lookup_maps(db_path, output_dir)
+
+    # Generate manifest
+    generate_manifest(output_dir, version)
+
+    print(f"✅ All artifacts generated in {output_dir}")
+    print(f"📊 Seed files contain {seed_limit} top kanji")
+
+
 def app():
     ap = argparse.ArgumentParser(prog="k2sqlite")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -82,9 +197,29 @@ def app():
     )
     ap_export.add_argument("--limit", "-l", type=int, help="Limit number of records")
 
+    ap_artifacts = sub.add_parser("artifacts", help="Generate all production artifacts")
+    ap_artifacts.add_argument(
+        "--db", "-d", type=Path, required=True, help="SQLite database path"
+    )
+    ap_artifacts.add_argument(
+        "--output-dir", "-o", type=Path, default=Path("output"), help="Output directory"
+    )
+    ap_artifacts.add_argument(
+        "--seed-limit",
+        "-l",
+        type=int,
+        default=200,
+        help="Number of kanji in seed files",
+    )
+    ap_artifacts.add_argument(
+        "--version", "-v", type=str, help="Version string for manifest"
+    )
+
     args = ap.parse_args()
     if args.cmd == "build":
         total = build_sqlite(args.input, args.db, batch_size=args.batch)
         print(f"Inserted {total} characters into {args.db}")
     elif args.cmd == "export":
         export_data(args.db, args.view, args.format, args.output, args.limit)
+    elif args.cmd == "artifacts":
+        generate_artifacts(args.db, args.output_dir, args.seed_limit, args.version)
