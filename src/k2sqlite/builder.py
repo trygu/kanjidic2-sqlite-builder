@@ -8,6 +8,17 @@ def text(el):
     return el.text.strip() if el is not None and el.text else ""
 
 
+def _dedup_preserve(items):
+    """Remove duplicates while preserving order."""
+    seen = set()
+    result = []
+    for item in items:
+        if item not in seen:
+            seen.add(item)
+            result.append(item)
+    return result
+
+
 def ensure_schema(conn: sqlite3.Connection):
     cur = conn.cursor()
     cur.executescript(
@@ -51,6 +62,79 @@ def ensure_schema(conn: sqlite3.Connection):
         CREATE INDEX IF NOT EXISTS idx_kanji_freq ON kanji(freq);
         CREATE INDEX IF NOT EXISTS idx_reading ON kanji_reading(reading);
         CREATE INDEX IF NOT EXISTS idx_meaning ON kanji_meaning(meaning);
+
+        -- Unique indexes to prevent duplicates
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_reading ON kanji_reading(literal, type, reading);
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_meaning ON kanji_meaning(literal, meaning);
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_radical ON kanji_radical(literal, rad_value);
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_variant ON kanji_variant(literal, var_type, value);
+
+        -- Priority view: sorted by frequency -> grade -> jlpt with aggregated data
+        CREATE VIEW IF NOT EXISTS kanji_priority AS
+        SELECT
+            k.literal,
+            k.grade,
+            k.stroke_count,
+            k.freq,
+            k.jlpt,
+            (SELECT GROUP_CONCAT(reading, ';') FROM kanji_reading WHERE literal = k.literal AND type = 'on') as readings_on,
+            (SELECT GROUP_CONCAT(reading, ';') FROM kanji_reading WHERE literal = k.literal AND type = 'kun') as readings_kun,
+            (SELECT GROUP_CONCAT(meaning, ';') FROM kanji_meaning WHERE literal = k.literal AND lang = 'en') as meanings_en,
+            -- Priority score: freq (lower=better), then grade, then jlpt
+            CASE
+                WHEN k.freq IS NOT NULL THEN k.freq
+                WHEN k.grade IS NOT NULL THEN 3000 + k.grade
+                WHEN k.jlpt IS NOT NULL THEN 4000 + k.jlpt
+                ELSE 9999
+            END as priority_score
+        FROM kanji k
+        ORDER BY priority_score, k.literal;
+
+        -- Seed view: clean export format for apps
+        CREATE VIEW IF NOT EXISTS kanji_seed AS
+        SELECT
+            k.literal,
+            COALESCE((SELECT GROUP_CONCAT(reading, ';') FROM kanji_reading WHERE literal = k.literal AND type = 'on'), '') as readings_on,
+            COALESCE((SELECT GROUP_CONCAT(reading, ';') FROM kanji_reading WHERE literal = k.literal AND type = 'kun'), '') as readings_kun,
+            COALESCE((SELECT GROUP_CONCAT(meaning, ';') FROM kanji_meaning WHERE literal = k.literal AND lang = 'en'), '') as meanings_en,
+            k.freq,
+            k.grade,
+            k.jlpt,
+            k.stroke_count
+        FROM kanji k
+        ORDER BY
+            CASE
+                WHEN k.freq IS NOT NULL THEN k.freq
+                WHEN k.grade IS NOT NULL THEN 3000 + k.grade
+                WHEN k.jlpt IS NOT NULL THEN 4000 + k.jlpt
+                ELSE 9999
+            END, k.literal;
+
+        -- Neighbor views for distractor generation
+        CREATE VIEW IF NOT EXISTS kanji_stroke_neighbors AS
+        SELECT
+            k1.literal as kanji,
+            k1.stroke_count,
+            k2.literal as neighbor,
+            k2.stroke_count as neighbor_strokes,
+            ABS(k1.stroke_count - k2.stroke_count) as stroke_diff
+        FROM kanji k1
+        JOIN kanji k2 ON k1.literal != k2.literal
+            AND ABS(k1.stroke_count - k2.stroke_count) <= 2
+            AND k2.stroke_count IS NOT NULL
+        WHERE k1.stroke_count IS NOT NULL
+        ORDER BY k1.literal, stroke_diff, k2.freq;
+
+        CREATE VIEW IF NOT EXISTS kanji_radical_neighbors AS
+        SELECT
+            r1.literal as kanji,
+            r1.rad_value as radical,
+            r2.literal as neighbor,
+            r2.rad_value as shared_radical
+        FROM kanji_radical r1
+        JOIN kanji_radical r2 ON r1.literal != r2.literal
+            AND r1.rad_value = r2.rad_value
+        ORDER BY r1.literal, r2.literal;
         """
     )
     conn.commit()
@@ -167,34 +251,34 @@ def _insert_character_data(cur, rec):
         (literal, rec["grade"], rec["stroke_count"], rec["freq"], rec["jlpt"]),
     )
 
-    # Insert related data
-    for radical in rec["radicals"]:
+    # Dedup and insert related data
+    for radical in _dedup_preserve(rec["radicals"]):
         cur.execute(
-            "INSERT INTO kanji_radical(literal, rad_value) VALUES (?,?)",
+            "INSERT OR IGNORE INTO kanji_radical(literal, rad_value) VALUES (?,?)",
             (literal, radical),
         )
 
-    for reading in rec["readings_on"]:
+    for reading in _dedup_preserve(rec["readings_on"]):
         cur.execute(
-            "INSERT INTO kanji_reading(literal, type, reading) VALUES (?,?,?)",
+            "INSERT OR IGNORE INTO kanji_reading(literal, type, reading) VALUES (?,?,?)",
             (literal, "on", reading),
         )
 
-    for reading in rec["readings_kun"]:
+    for reading in _dedup_preserve(rec["readings_kun"]):
         cur.execute(
-            "INSERT INTO kanji_reading(literal, type, reading) VALUES (?,?,?)",
+            "INSERT OR IGNORE INTO kanji_reading(literal, type, reading) VALUES (?,?,?)",
             (literal, "kun", reading),
         )
 
-    for meaning in rec["meanings_en"]:
+    for meaning in _dedup_preserve(rec["meanings_en"]):
         cur.execute(
-            "INSERT INTO kanji_meaning(literal, lang, meaning) VALUES (?,?,?)",
+            "INSERT OR IGNORE INTO kanji_meaning(literal, lang, meaning) VALUES (?,?,?)",
             (literal, "en", meaning),
         )
 
-    for vtype, value in rec["variants"]:
+    for vtype, value in _dedup_preserve(rec["variants"]):
         cur.execute(
-            "INSERT INTO kanji_variant(literal, var_type, value) VALUES (?,?,?)",
+            "INSERT OR IGNORE INTO kanji_variant(literal, var_type, value) VALUES (?,?,?)",
             (literal, vtype, value),
         )
 

@@ -9,6 +9,9 @@ A fast, memory-efficient tool for converting KANJIDIC2 XML data into a normalize
 - **Memory Efficient**: Uses streaming XML parsing (`iterparse`) to handle large KANJIDIC2 files without loading everything into memory
 - **Fast Processing**: Batch commits and optimized database schema for maximum performance
 - **Normalized Schema**: Clean, normalized database structure for flexible querying
+- **Data Quality**: Automatic deduplication and unique indexes prevent duplicate data
+- **Smart Views**: Pre-built views for common use cases and app development
+- **Export Support**: Built-in CSV/JSON export functionality for easy data access
 
 ## Quick Start
 
@@ -72,6 +75,29 @@ The generated SQLite database contains the following tables:
 - `idx_kanji_freq` - Frequency-based lookups
 - `idx_reading` - Reading-based searches
 - `idx_meaning` - Meaning-based searches
+- **Unique indexes** prevent duplicates:
+  - `ux_reading` - (literal, type, reading)
+  - `ux_meaning` - (literal, meaning)  
+  - `ux_radical` - (literal, rad_value)
+  - `ux_variant` - (literal, var_type, value)
+
+### Smart Views
+
+- **`kanji_priority`** - Kanji sorted by learning priority
+  - Includes priority_score: freq → grade → jlpt ranking
+  - Perfect for curriculum planning and learning apps
+
+- **`kanji_seed`** - Clean export format for applications
+  - One row per kanji with concatenated readings/meanings
+  - Optimized for CSV export and simple queries
+
+- **`kanji_stroke_neighbors`** - Find similar kanji by stroke count
+  - Useful for generating distractors in quiz apps
+  - Shows kanji with ±2 stroke difference
+
+- **`kanji_radical_neighbors`** - Find kanji sharing radicals
+  - Great for learning radical patterns
+  - Helps generate related kanji questions
 
 ## Command Line Usage
 
@@ -84,7 +110,7 @@ k2sqlite build --input data/kanjidic2.xml --db output/kanjidic2.sqlite --batch 5
 k2sqlite build --input /path/to/your/KANJIDIC2.xml --db output/kanjidic2.sqlite --batch 500
 ```
 
-Options:
+Build Options:
 - `--input`, `-i` - Path to KANJIDIC2.xml file (required)
   - Use `data/kanjidic2.xml` for the included dataset
   - Or provide your own KANJIDIC2.xml file path
@@ -92,6 +118,25 @@ Options:
 - `--batch`, `-b` - Number of kanji to process before committing to database (default: 500)
   - Higher values (1000+): Faster processing, more memory usage
   - Lower values (100-250): Slower processing, less memory usage, more frequent saves
+
+### Export Data
+```bash
+# Export top 100 kanji to CSV
+k2sqlite export --db output/kanjidic2.sqlite --view kanji_seed --format csv --limit 100 --output top100.csv
+
+# Export priority-sorted kanji as JSON
+k2sqlite export --db output/kanjidic2.sqlite --view kanji_priority --format json --limit 50
+
+# Export to stdout (for piping)
+k2sqlite export --db output/kanjidic2.sqlite --view kanji_seed --format csv --limit 10
+```
+
+Export Options:
+- `--db`, `-d` - SQLite database path (required)
+- `--view`, `-v` - View to export: `kanji_seed` or `kanji_priority` (default: kanji_seed)
+- `--format`, `-f` - Output format: `csv` or `json` (default: csv)
+- `--output`, `-o` - Output file path (default: stdout)
+- `--limit`, `-l` - Limit number of records exported
 
 ## Automated Builds
 
@@ -136,6 +181,7 @@ ruff src/ tests/
 
 Once you have your SQLite database, here are some useful queries:
 
+### Basic Queries
 ```sql
 -- Find all grade 1 kanji with their meanings
 SELECT k.literal, k.stroke_count, GROUP_CONCAT(m.meaning, '; ') as meanings
@@ -153,6 +199,28 @@ WHERE r.reading = 'スイ' AND r.type = 'on'
 ORDER BY k.freq;
 ```
 
+### Using Smart Views
+```sql
+-- Get top 10 priority kanji for learning
+SELECT literal, readings_on, readings_kun, meanings_en, priority_score
+FROM kanji_priority 
+LIMIT 10;
+
+-- Export-ready data
+SELECT * FROM kanji_seed WHERE grade = 1 LIMIT 20;
+
+-- Find similar kanji for quiz distractors
+SELECT neighbor, neighbor_strokes, stroke_diff
+FROM kanji_stroke_neighbors 
+WHERE kanji = '水' 
+ORDER BY stroke_diff, neighbor_strokes;
+
+-- Find kanji sharing radicals
+SELECT neighbor, shared_radical
+FROM kanji_radical_neighbors 
+WHERE kanji = '水';
+```
+
 ## Requirements
 
 - Python 3.10+
@@ -163,13 +231,15 @@ ORDER BY k.freq;
 - **Streaming Processing**: Handles large XML files without memory issues
 - **Batch Commits**: Optimizes database write performance
 - **Normalized Design**: Enables flexible querying and joins for any application
-- **Proper Indexing**: Ensures good query performance
+- **Data Quality Assurance**: Automatic deduplication and unique constraints
+- **Smart Views**: Pre-built queries for common app development patterns
+- **Export Ready**: Built-in tools for generating app-ready data formats
+- **Proper Indexing**: Ensures good query performance for all use cases
 
 ## Next Steps
 
 - Add JMDict support for vocabulary data
-- Implement additional export formats (CSV, JSON)
-- Add more comprehensive querying examples
-- Support for additional KANJIDIC2 fields
-- Bygg views/eksport som matcher appens seed-format
-- Kjør som GitHub Action for reproduserbare artefakter
+- Implement additional export formats and filtering options
+- Add more neighbor-finding algorithms for quiz generation
+- Support for additional KANJIDIC2 fields (variants, codepoints)
+- API endpoint wrapper for web applications
