@@ -109,32 +109,6 @@ def ensure_schema(conn: sqlite3.Connection):
                 WHEN k.jlpt IS NOT NULL THEN 4000 + k.jlpt
                 ELSE 9999
             END, k.literal;
-
-        -- Neighbor views for distractor generation
-        CREATE VIEW IF NOT EXISTS kanji_stroke_neighbors AS
-        SELECT
-            k1.literal as kanji,
-            k1.stroke_count,
-            k2.literal as neighbor,
-            k2.stroke_count as neighbor_strokes,
-            ABS(k1.stroke_count - k2.stroke_count) as stroke_diff
-        FROM kanji k1
-        JOIN kanji k2 ON k1.literal != k2.literal
-            AND ABS(k1.stroke_count - k2.stroke_count) <= 2
-            AND k2.stroke_count IS NOT NULL
-        WHERE k1.stroke_count IS NOT NULL
-        ORDER BY k1.literal, stroke_diff, k2.freq;
-
-        CREATE VIEW IF NOT EXISTS kanji_radical_neighbors AS
-        SELECT
-            r1.literal as kanji,
-            r1.rad_value as radical,
-            r2.literal as neighbor,
-            r2.rad_value as shared_radical
-        FROM kanji_radical r1
-        JOIN kanji_radical r2 ON r1.literal != r2.literal
-            AND r1.rad_value = r2.rad_value
-        ORDER BY r1.literal, r2.literal;
         """
     )
     conn.commit()

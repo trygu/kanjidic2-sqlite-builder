@@ -10,8 +10,8 @@ A fast, memory-efficient tool for converting KANJIDIC2 XML data into a normalize
 - **Fast Processing**: Batch commits and optimized database schema for maximum performance
 - **Normalized Schema**: Clean, normalized database structure for flexible querying
 - **Data Quality**: Automatic deduplication and unique indexes prevent duplicate data
-- **Smart Views**: Pre-built views for common use cases and app development
-- **Export Support**: Built-in CSV/JSON export functionality for easy data access
+- **Foundation-First**: Provides solid database foundation for any kanji application
+- **Export Support**: Basic CSV/JSON export for development and prototyping
 
 ## Quick Start
 
@@ -138,33 +138,17 @@ erDiagram
   - `ux_radical` - (literal, rad_value)
   - `ux_variant` - (literal, var_type, value)
 
-### Smart Views
+### Essential Views
 
-- **`kanji_priority`** - **Intelligent learning order for educational apps**
-  - **What it gives you**: Kanji ranked by optimal learning sequence
-  - **Priority algorithm**: Frequency (most common first) → Grade level → JLPT level
-  - **Perfect for**: Curriculum planning, spaced repetition systems, beginner apps
-  - **Use case**: "Show me the next 20 most important kanji to learn"
-  - **Key field**: `priority_score` (lower = more important to learn first)
+- **`kanji_priority`** - **Intelligent learning order**
+  - **Purpose**: Kanji ranked by optimal learning sequence (frequency → grade → JLPT)
+  - **Key field**: `priority_score` (lower = higher priority)
+  - **Best for**: Apps that need "what should I learn next?" logic
 
-- **`kanji_seed`** - **Ready-to-use data format for rapid app development**
-  - **What it gives you**: Complete kanji info in one row, no JOINs needed
-  - **Data format**: Readings and meanings pre-concatenated with semicolons
-  - **Perfect for**: Quick prototypes, mobile apps, CSV imports, simple lookups
-  - **Use case**: "Give me all kanji data in the simplest possible format"
-  - **Benefit**: Parse once, use everywhere - no complex SQL required
-
-- **`kanji_stroke_neighbors`** - **Intelligent distractor generation for quizzes**
-  - **What it gives you**: Kanji that look similar by stroke count (±2 strokes)
-  - **Perfect for**: Multiple choice questions, "which kanji has X strokes?" games
-  - **Use case**: User learns 水 (4 strokes) → show 木 (4), 火 (4), 天 (6) as alternatives
-
-- **`kanji_radical_neighbors`** - **Radical-based learning connections**
-  - **What it gives you**: Kanji sharing the same radicals for pattern recognition
-  - **Perfect for**: Teaching radical concepts, "kanji family" learning
-  - **Use case**: User learns 水 → show 海, 池, 泳 (all have water radical) for context
-
-## Command Line Usage
+- **`kanji_seed`** - **Development-friendly format**
+  - **Purpose**: Complete kanji info in one row with concatenated readings/meanings
+  - **Format**: Semicolon-separated strings, no JOINs required
+  - **Best for**: Rapid prototyping, mobile app data loading, CSV exports## Command Line Usage
 
 ### Build Database
 ```bash
@@ -186,26 +170,21 @@ Build Options:
 
 ### Export Data
 ```bash
-# 🎯 For learning apps: Get top 100 learning-priority kanji
-k2sqlite export --db output/kanjidic2.sqlite --view kanji_priority --format csv --limit 100 --output curriculum.csv
+# Basic CSV export
+k2sqlite export --db output/kanjidic2.sqlite --view kanji_seed --format csv --limit 100 --output kanji.csv
 
-# 📱 For mobile apps: Get simple, ready-to-use kanji data
-k2sqlite export --db output/kanjidic2.sqlite --view kanji_seed --format json --limit 1000 --output app_data.json
+# Basic JSON export
+k2sqlite export --db output/kanjidic2.sqlite --view kanji_priority --format json --limit 50 --output priority.json
 
-# 👶 For beginner apps: Get only Grade 1-2 kanji in learning order
-k2sqlite export --db output/kanjidic2.sqlite --view kanji_priority --format csv --limit 200 --output beginner_kanji.csv
-
-# 🔗 For APIs: Stream data to other systems
-k2sqlite export --db output/kanjidic2.sqlite --view kanji_seed --format json | curl -X POST -d @- https://your-api.com/import
+# Stream to stdout for further processing
+k2sqlite export --db output/kanjidic2.sqlite --view kanji_seed --format csv | head -20
 ```
 
-**Real-world examples:**
-- **Flashcard app**: Use `kanji_priority` to show most important kanji first
-- **Quiz game**: Use `kanji_seed` for simple lookups, neighbor views for wrong answers
-- **Learning dashboard**: Export CSV to Excel for curriculum planning
-- **Mobile app**: Load JSON into app database on first launch
-
-Export Options:
+**Philosophy**: The export function provides basic data access. Your applications should implement their own specialized logic for:
+- Quiz question generation
+- Learning algorithms
+- UI-specific data formatting
+- Caching and performance optimizationExport Options:
 - `--db`, `-d` - SQLite database path (required)
 - `--view`, `-v` - View to export: `kanji_seed` or `kanji_priority` (default: kanji_seed)
 - `--format`, `-f` - Output format: `csv` or `json` (default: csv)
@@ -273,26 +252,24 @@ WHERE r.reading = 'スイ' AND r.type = 'on'
 ORDER BY k.freq;
 ```
 
-### Using Smart Views
+### Using Views
 ```sql
 -- Get top 10 priority kanji for learning
 SELECT literal, readings_on, readings_kun, meanings_en, priority_score
 FROM kanji_priority
 LIMIT 10;
 
--- Export-ready data
+-- Export-ready data for Grade 1 kanji
 SELECT * FROM kanji_seed WHERE grade = 1 LIMIT 20;
 
--- Find similar kanji for quiz distractors
-SELECT neighbor, neighbor_strokes, stroke_diff
-FROM kanji_stroke_neighbors
-WHERE kanji = '水'
-ORDER BY stroke_diff, neighbor_strokes;
-
--- Find kanji sharing radicals
-SELECT neighbor, shared_radical
-FROM kanji_radical_neighbors
-WHERE kanji = '水';
+-- Build your own distractor logic
+SELECT k1.literal as target, k2.literal as distractor, k2.grade
+FROM kanji k1, kanji k2
+WHERE k1.literal = '水'
+  AND k2.grade = k1.grade
+  AND k2.literal != k1.literal
+ORDER BY k2.freq
+LIMIT 3;
 ```
 
 ## Requirements
@@ -302,18 +279,20 @@ WHERE kanji = '水';
 
 ## Why This Architecture?
 
+- **Database-First Design**: Focus on providing a solid, clean data foundation
 - **Streaming Processing**: Handles large XML files without memory issues
 - **Batch Commits**: Optimizes database write performance
-- **Normalized Design**: Enables flexible querying and joins for any application
-- **Data Quality Assurance**: Automatic deduplication and unique constraints
-- **Smart Views**: Pre-built queries for common app development patterns
-- **Export Ready**: Built-in tools for generating app-ready data formats
-- **Proper Indexing**: Ensures good query performance for all use cases
+- **Normalized Schema**: Enables any type of kanji application to be built on top
+- **Data Quality**: Automatic deduplication and constraints ensure clean data
+- **Simple Views**: Two essential views for common patterns, nothing more
+- **App Freedom**: Your applications implement their own specialized logic
+- **Proper Indexing**: Ensures good performance for all query patterns
 
 ## Next Steps
 
-- Add JMDict support for vocabulary data
-- Implement additional export formats and filtering options
-- Add more neighbor-finding algorithms for quiz generation
-- Support for additional KANJIDIC2 fields (variants, codepoints)
-- API endpoint wrapper for web applications
+This database is designed to be the foundation for specialized kanji applications. Consider building:
+- **Spaced repetition systems** using the priority scoring
+- **Quiz generators** with grade/JLPT-based difficulty matching
+- **Learning dashboards** with progress tracking
+- **Mobile flashcard apps** using the seed view for simple data loading
+- **API services** that add application-specific logic on top
