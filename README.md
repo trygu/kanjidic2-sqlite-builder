@@ -140,21 +140,29 @@ erDiagram
 
 ### Smart Views
 
-- **`kanji_priority`** - Kanji sorted by learning priority
-  - Includes priority_score: freq → grade → jlpt ranking
-  - Perfect for curriculum planning and learning apps
+- **`kanji_priority`** - **Intelligent learning order for educational apps**
+  - **What it gives you**: Kanji ranked by optimal learning sequence
+  - **Priority algorithm**: Frequency (most common first) → Grade level → JLPT level
+  - **Perfect for**: Curriculum planning, spaced repetition systems, beginner apps
+  - **Use case**: "Show me the next 20 most important kanji to learn"
+  - **Key field**: `priority_score` (lower = more important to learn first)
 
-- **`kanji_seed`** - Clean export format for applications
-  - One row per kanji with concatenated readings/meanings
-  - Optimized for CSV export and simple queries
+- **`kanji_seed`** - **Ready-to-use data format for rapid app development**
+  - **What it gives you**: Complete kanji info in one row, no JOINs needed
+  - **Data format**: Readings and meanings pre-concatenated with semicolons
+  - **Perfect for**: Quick prototypes, mobile apps, CSV imports, simple lookups
+  - **Use case**: "Give me all kanji data in the simplest possible format"
+  - **Benefit**: Parse once, use everywhere - no complex SQL required
 
-- **`kanji_stroke_neighbors`** - Find similar kanji by stroke count
-  - Useful for generating distractors in quiz apps
-  - Shows kanji with ±2 stroke difference
+- **`kanji_stroke_neighbors`** - **Intelligent distractor generation for quizzes**
+  - **What it gives you**: Kanji that look similar by stroke count (±2 strokes)
+  - **Perfect for**: Multiple choice questions, "which kanji has X strokes?" games
+  - **Use case**: User learns 水 (4 strokes) → show 木 (4), 火 (4), 天 (6) as alternatives
 
-- **`kanji_radical_neighbors`** - Find kanji sharing radicals
-  - Great for learning radical patterns
-  - Helps generate related kanji questions
+- **`kanji_radical_neighbors`** - **Radical-based learning connections**
+  - **What it gives you**: Kanji sharing the same radicals for pattern recognition
+  - **Perfect for**: Teaching radical concepts, "kanji family" learning
+  - **Use case**: User learns 水 → show 海, 池, 泳 (all have water radical) for context
 
 ## Command Line Usage
 
@@ -178,15 +186,24 @@ Build Options:
 
 ### Export Data
 ```bash
-# Export top 100 kanji to CSV
-k2sqlite export --db output/kanjidic2.sqlite --view kanji_seed --format csv --limit 100 --output top100.csv
+# 🎯 For learning apps: Get top 100 learning-priority kanji
+k2sqlite export --db output/kanjidic2.sqlite --view kanji_priority --format csv --limit 100 --output curriculum.csv
 
-# Export priority-sorted kanji as JSON
-k2sqlite export --db output/kanjidic2.sqlite --view kanji_priority --format json --limit 50
+# 📱 For mobile apps: Get simple, ready-to-use kanji data
+k2sqlite export --db output/kanjidic2.sqlite --view kanji_seed --format json --limit 1000 --output app_data.json
 
-# Export to stdout (for piping)
-k2sqlite export --db output/kanjidic2.sqlite --view kanji_seed --format csv --limit 10
+# 👶 For beginner apps: Get only Grade 1-2 kanji in learning order
+k2sqlite export --db output/kanjidic2.sqlite --view kanji_priority --format csv --limit 200 --output beginner_kanji.csv
+
+# 🔗 For APIs: Stream data to other systems
+k2sqlite export --db output/kanjidic2.sqlite --view kanji_seed --format json | curl -X POST -d @- https://your-api.com/import
 ```
+
+**Real-world examples:**
+- **Flashcard app**: Use `kanji_priority` to show most important kanji first
+- **Quiz game**: Use `kanji_seed` for simple lookups, neighbor views for wrong answers
+- **Learning dashboard**: Export CSV to Excel for curriculum planning
+- **Mobile app**: Load JSON into app database on first launch
 
 Export Options:
 - `--db`, `-d` - SQLite database path (required)
