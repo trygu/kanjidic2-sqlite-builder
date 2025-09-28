@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kanjidic2>
+  <character>
+    <literal>水</literal>
+    <codepoint>
+      <cp_value cp_type="ucs">6C34</cp_value>
+    </codepoint>
+    <radical>
+      <rad_value rad_type="classical">85</rad_value>
+    </radical>
+    <misc>
+      <grade>1</grade>
+      <stroke_count>4</stroke_count>
+      <freq>60</freq>
+      <jlpt>4</jlpt>
+    </misc>
+    <reading_meaning>
+      <rmgroup>
+        <reading r_type="ja_on">スイ</reading>
+        <reading r_type="ja_kun">みず</reading>
+        <meaning>water</meaning>
+      </rmgroup>
+    </reading_meaning>
+  </character>
+</kanjidic2>

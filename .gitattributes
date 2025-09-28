@@ -1,0 +1,15 @@
+# Handle large data files
+data/kanjidic2.xml filter=lfs diff=lfs merge=lfs -text
+
+# SQLite databases
+*.sqlite binary
+*.db binary
+
+# Ensure line endings
+*.py text
+*.md text
+*.yml text
+*.yaml text
+*.toml text
+*.txt text
+Makefile text

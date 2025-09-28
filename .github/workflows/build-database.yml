@@ -1,0 +1,62 @@
+name: Build KANJIDIC2 SQLite Database
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  release:
+    types: [published]
+  # Allow manual triggering
+  workflow_dispatch:
+
+jobs:
+  build-database:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: Run tests
+        run: pytest
+
+      - name: Build SQLite database
+        run: |
+          mkdir -p out
+          k2sqlite build --input data/kanjidic2.xml --db out/kanjidic2.sqlite
+
+      - name: Verify database
+        run: |
+          # Basic verification that database was created and has data
+          sqlite3 out/kanjidic2.sqlite "SELECT COUNT(*) as kanji_count FROM kanji;"
+          sqlite3 out/kanjidic2.sqlite "SELECT COUNT(*) as reading_count FROM kanji_reading;"
+          sqlite3 out/kanjidic2.sqlite "SELECT COUNT(*) as meaning_count FROM kanji_meaning;"
+
+      - name: Upload SQLite database as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kanjidic2-sqlite-${{ github.sha }}
+          path: out/kanjidic2.sqlite
+          retention-days: 90
+
+      - name: Upload database for releases
+        if: github.event_name == 'release'
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: out/kanjidic2.sqlite
+          asset_name: kanjidic2.sqlite
+          asset_content_type: application/x-sqlite3
