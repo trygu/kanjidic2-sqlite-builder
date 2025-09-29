@@ -57,7 +57,7 @@ erDiagram
         INTEGER grade "School grade (1-6, 8)"
         INTEGER stroke_count "Number of strokes"
         INTEGER freq "Frequency rank (1=most common)"
-        INTEGER jlpt "JLPT level"
+        INTEGER jlpt "Modern JLPT level (1=N1, 2=N2, 3=N3, 4=N4, 5=N5)"
     }
 
     kanji_radical {
@@ -113,7 +113,7 @@ erDiagram
   - `grade` - School grade level (1-6 for elementary, 8 for secondary)
   - `stroke_count` - Number of strokes
   - `freq` - Frequency ranking (1 = most common)
-  - `jlpt` - Japanese Language Proficiency Test level
+  - `jlpt` - Modern JLPT level (1=N1, 2=N2, 3=N3, 4=N4, 5=N5)
 
 - **`kanji_radical`** - Radical information
   - `literal` - The kanji character
@@ -154,7 +154,19 @@ erDiagram
 - **`kanji_seed`** - **Development-friendly format**
   - **Purpose**: Complete kanji info in one row with concatenated readings/meanings
   - **Format**: Semicolon-separated strings, no JOINs required
-  - **Best for**: Rapid prototyping, mobile app data loading, CSV exports## Command Line Usage
+  - **Best for**: Rapid prototyping, mobile app data loading, CSV exports
+
+### Modern JLPT Mapping
+
+The database includes an intelligent JLPT level mapping system that converts historical KANJIDIC2 JLPT data (1-4) into modern JLPT levels (N1-N5):
+
+- **N5 (Level 5)**: Grade 1-2 kanji + high-frequency characters (easiest)
+- **N4 (Level 4)**: Grade 3-4 kanji + historical JLPT level 4
+- **N3 (Level 3)**: Grade 5-6 kanji + historical JLPT level 3
+- **N2 (Level 2)**: Historical JLPT level 2 + common secondary kanji
+- **N1 (Level 1)**: Historical JLPT level 1 + advanced kanji (hardest)
+
+This ensures your applications get practical N5 data (338 kanji) for modern Japanese learning, even though the original KANJIDIC2 only had levels 1-4.## Command Line Usage
 
 ### Build Database
 ```bash
@@ -395,8 +407,23 @@ ORDER BY grade;
 -- JLPT study sets
 SELECT literal, meanings_en, readings_on, freq
 FROM kanji_seed
-WHERE jlpt = 5  -- N5 level kanji
+WHERE jlpt = 5  -- N5 level kanji (easiest)
 ORDER BY freq;
+
+-- All JLPT levels with counts
+SELECT jlpt,
+       CASE jlpt
+         WHEN 1 THEN 'N1 (hardest)'
+         WHEN 2 THEN 'N2'
+         WHEN 3 THEN 'N3'
+         WHEN 4 THEN 'N4'
+         WHEN 5 THEN 'N5 (easiest)'
+       END as level_name,
+       COUNT(*) as kanji_count
+FROM kanji
+WHERE jlpt IS NOT NULL
+GROUP BY jlpt
+ORDER BY jlpt;
 ```
 
 ### Quiz Generation Queries
