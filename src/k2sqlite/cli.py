@@ -1,6 +1,6 @@
-from __future__ import annotations
 import argparse
 import json
+import random
 import sqlite3
 import hashlib
 import os
@@ -101,6 +101,94 @@ def generate_lookup_maps(db_path: Path, output_dir: Path):
     print("Generated lookup maps")
 
 
+def generate_mcq_samples(db_path: Path, output_dir: Path, kanji_limit: int = 200):
+    """Generate sample MCQ files for artifacts."""
+    conn = sqlite3.connect(db_path)
+
+    # Get kanji data for MCQ generation (similar to generate_mcq.py logic)
+    query = """
+    SELECT k.literal, k.freq,
+           GROUP_CONCAT(km.meaning, ';') as meanings,
+           GROUP_CONCAT(CASE WHEN kr.type = 'kun' THEN kr.reading END, ';') as kun_readings,
+           GROUP_CONCAT(CASE WHEN kr.type = 'on' THEN kr.reading END, ';') as on_readings
+    FROM kanji k
+    LEFT JOIN kanji_meaning km ON k.literal = km.literal AND km.lang = 'en'
+    LEFT JOIN kanji_reading kr ON k.literal = kr.literal
+    WHERE k.freq IS NOT NULL
+    GROUP BY k.literal
+    ORDER BY k.freq
+    LIMIT ?
+    """
+
+    kanji_data = []
+    for row in conn.execute(query, (kanji_limit,)):
+        literal, freq, meanings, _, _ = row
+        meanings_list = [m.strip() for m in (meanings or "").split(";") if m.strip()]
+
+        if meanings_list:  # Only include kanji with meanings
+            kanji_data.append(
+                {"literal": literal, "meanings": meanings_list, "freq": freq}
+            )
+
+    # Generate sample questions (simplified version)
+    sample_questions = []
+    used_meanings = set()
+
+    for i, kanji in enumerate(kanji_data[:50]):  # Generate 50 sample questions
+        if not kanji["meanings"]:
+            continue
+
+        meaning = kanji["meanings"][0]
+        if meaning in used_meanings:
+            continue
+        used_meanings.add(meaning)
+
+        # Generate distractors
+        distractors = []
+        attempts = 0
+        while len(distractors) < 3 and attempts < 10:
+            distractor_kanji = random.choice(kanji_data)
+            if (
+                distractor_kanji["literal"] != kanji["literal"]
+                and distractor_kanji["meanings"]
+                and distractor_kanji["meanings"][0] not in distractors
+                and distractor_kanji["meanings"][0] != meaning
+            ):
+                distractors.append(distractor_kanji["meanings"][0])
+            attempts += 1
+
+        if len(distractors) >= 3:
+            choices = [meaning] + distractors[:3]
+            random.shuffle(choices)
+
+            sample_questions.append(
+                {
+                    "type": "char_to_meaning",
+                    "question": f"What does {kanji['literal']} mean?",
+                    "choices": choices,
+                    "correct": meaning,
+                    "explanation": f"The kanji {kanji['literal']} means '{meaning}'",
+                }
+            )
+
+    # Save sample MCQ file
+    mcq_file = output_dir / "sample_mcq.json"
+    with open(mcq_file, "w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "description": "Sample MCQ questions from top frequent kanji",
+                "count": len(sample_questions),
+                "questions": sample_questions,
+            },
+            f,
+            ensure_ascii=False,
+            indent=2,
+        )
+
+    conn.close()
+    print(f"Generated {len(sample_questions)} sample MCQ questions")
+
+
 def generate_manifest(output_dir: Path, version: str = None):
     """Generate manifest.json with file checksums."""
     artifact_files = [
@@ -161,6 +249,9 @@ def generate_artifacts(
 
     # Generate lookup maps
     generate_lookup_maps(db_path, output_dir)
+
+    # Generate MCQ files
+    generate_mcq_samples(db_path, output_dir, seed_limit)
 
     # Generate manifest
     generate_manifest(output_dir, version)
