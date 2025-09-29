@@ -33,8 +33,7 @@ def ensure_schema(conn: sqlite3.Connection):
             grade INTEGER,
             stroke_count INTEGER,
             freq INTEGER,
-            jlpt INTEGER,
-            jlpt_modern INTEGER  -- Modern JLPT levels: 1=N1, 2=N2, 3=N3, 4=N4, 5=N5
+            jlpt INTEGER  -- Modern JLPT levels: 1=N1, 2=N2, 3=N3, 4=N4, 5=N5
         );
 
         CREATE TABLE IF NOT EXISTS kanji_radical(
@@ -78,7 +77,6 @@ def ensure_schema(conn: sqlite3.Connection):
             k.stroke_count,
             k.freq,
             k.jlpt,
-            k.jlpt_modern,
             (SELECT GROUP_CONCAT(reading, ';') FROM kanji_reading WHERE literal = k.literal AND type = 'on') as readings_on,
             (SELECT GROUP_CONCAT(reading, ';') FROM kanji_reading WHERE literal = k.literal AND type = 'kun') as readings_kun,
             (SELECT GROUP_CONCAT(meaning, ';') FROM kanji_meaning WHERE literal = k.literal AND lang = 'en') as meanings_en,
@@ -102,7 +100,6 @@ def ensure_schema(conn: sqlite3.Connection):
             k.freq,
             k.grade,
             k.jlpt,
-            k.jlpt_modern,
             k.stroke_count
         FROM kanji k
         ORDER BY
@@ -223,7 +220,7 @@ def _calculate_modern_jlpt(grade, freq, old_jlpt):
     Calculate modern JLPT level (1=N1, 2=N2, 3=N3, 4=N4, 5=N5) based on:
     - grade: School grade level (1-6)
     - freq: Frequency rank (lower numbers = more common)
-    - old_jlpt: Old JLPT system (1-4, where 1=hardest)
+    - old_jlpt: Old JLPT system from XML (1-4, where 1=hardest)
     """
     # N5 (easiest): Grade 1-2 kanji OR very high frequency
     if grade in (1, 2) or (freq is not None and freq <= 200):
@@ -245,18 +242,7 @@ def _calculate_modern_jlpt(grade, freq, old_jlpt):
     if old_jlpt == 1:
         return 1
 
-    # Default: assign based on frequency if available
-    if freq is not None:
-        if freq <= 500:
-            return 4  # More common -> easier
-        elif freq <= 1500:
-            return 3
-        elif freq <= 3000:
-            return 2
-        else:
-            return 1  # Rare -> hardest
-
-    # No data available - assign to N1 (hardest)
+    # Default to N1 for anything else
     return 1
 
 
@@ -264,19 +250,18 @@ def _insert_character_data(cur, rec):
     """Insert character data into database tables."""
     literal = rec["literal"]
 
-    # Calculate modern JLPT level
-    jlpt_modern = _calculate_modern_jlpt(rec["grade"], rec["freq"], rec["jlpt"])
+    # Calculate modern JLPT level from old JLPT data
+    jlpt = _calculate_modern_jlpt(rec["grade"], rec["freq"], rec["jlpt"])
 
     # Insert main kanji record
     cur.execute(
-        "INSERT OR REPLACE INTO kanji(literal, grade, stroke_count, freq, jlpt, jlpt_modern) VALUES (?,?,?,?,?,?)",
+        "INSERT OR REPLACE INTO kanji(literal, grade, stroke_count, freq, jlpt) VALUES (?,?,?,?,?)",
         (
             literal,
             rec["grade"],
             rec["stroke_count"],
             rec["freq"],
-            rec["jlpt"],
-            jlpt_modern,
+            jlpt,
         ),
     )
 
