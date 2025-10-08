@@ -90,25 +90,40 @@ def ensure_schema(conn: sqlite3.Connection):
         FROM kanji k
         ORDER BY priority_score, k.literal;
 
-        -- Seed view: clean export format for apps
-        CREATE VIEW IF NOT EXISTS kanji_seed AS
-        SELECT
+        -- App contract: kanji_seed view for quiz generation
+        CREATE VIEW kanji_seed AS 
+        SELECT 
             k.literal,
-            COALESCE((SELECT GROUP_CONCAT(reading, ';') FROM kanji_reading WHERE literal = k.literal AND type = 'on'), '') as readings_on,
-            COALESCE((SELECT GROUP_CONCAT(reading, ';') FROM kanji_reading WHERE literal = k.literal AND type = 'kun'), '') as readings_kun,
-            COALESCE((SELECT GROUP_CONCAT(meaning, ';') FROM kanji_meaning WHERE literal = k.literal AND lang = 'en'), '') as meanings_en,
+            k.jlpt as lvl,  -- N5=5, N4=4, N3=3, N2=2, N1=1
             k.freq,
             k.grade,
-            k.jlpt,
-            k.stroke_count
+            (SELECT m.meaning 
+             FROM kanji_meaning m 
+             WHERE m.literal = k.literal AND m.lang = 'en'
+             LIMIT 1) as main_meaning,
+            COALESCE((SELECT GROUP_CONCAT(r.reading, '・') 
+                     FROM kanji_reading r 
+                     WHERE r.literal = k.literal AND r.type = 'on'), '') as on_prime,
+            COALESCE((SELECT GROUP_CONCAT(r.reading, '・') 
+                     FROM kanji_reading r 
+                     WHERE r.literal = k.literal AND r.type = 'kun'), '') as kun_prime
+        FROM kanji k 
+        WHERE k.jlpt IS NOT NULL 
+        AND EXISTS (SELECT 1 FROM kanji_meaning m WHERE m.literal = k.literal AND m.lang = 'en');
+
+        -- App contract: distractor pool for quiz generation
+        CREATE VIEW distractor_pool AS
+        SELECT 
+            k.jlpt as lvl,  -- N5=5, N4=4, N3=3, N2=2, N1=1
+            m.meaning
         FROM kanji k
-        ORDER BY
-            CASE
-                WHEN k.freq IS NOT NULL THEN k.freq
-                WHEN k.grade IS NOT NULL THEN 3000 + k.grade
-                WHEN k.jlpt IS NOT NULL THEN 4000 + k.jlpt
-                ELSE 9999
-            END, k.literal;
+        JOIN kanji_meaning m ON k.literal = m.literal
+        WHERE k.jlpt IS NOT NULL AND m.lang = 'en';
+
+        -- Performance indexes for app queries
+        CREATE INDEX IF NOT EXISTS idx_kanji_seed_lvl ON kanji(jlpt) WHERE jlpt IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_kanji_seed_literal ON kanji(literal);
+        CREATE INDEX IF NOT EXISTS idx_meaning_for_distractor ON kanji_meaning(meaning) WHERE lang = 'en';
         """
     )
     conn.commit()
@@ -222,27 +237,29 @@ def _calculate_modern_jlpt(grade, freq, old_jlpt):
     - freq: Frequency rank (lower numbers = more common)
     - old_jlpt: Old JLPT system from XML (1-4, where 1=hardest)
     """
-    # N5 (easiest): Grade 1-2 kanji OR very high frequency
-    if grade in (1, 2) or (freq is not None and freq <= 200):
+    # Primary: Use old JLPT data if available
+    if old_jlpt == 4:
+        return 5  # N5 (easiest)
+    elif old_jlpt == 3:
+        return 4  # N4
+    elif old_jlpt == 2:
+        return 3  # N3  
+    elif old_jlpt == 1:
+        return 2  # N2
+
+    # Secondary: Very high frequency + low grade = N5
+    if freq is not None and freq <= 200 and grade in (1, 2):
         return 5
 
-    # N4: Grade 3-4 kanji OR old JLPT level 4
-    if grade in (3, 4) or old_jlpt == 4:
+    # Secondary: Common kanji in elementary grades = N4
+    if freq is not None and freq <= 500 and grade in (3, 4):
         return 4
 
-    # N3: Grade 5-6 kanji OR old JLPT level 3
-    if grade in (5, 6) or old_jlpt == 3:
+    # Secondary: Less common but still jouyou = N3
+    if freq is not None and freq <= 1000 and grade in (5, 6):
         return 3
 
-    # N2: Old JLPT level 2 OR common jouyou kanji (grade 8)
-    if old_jlpt == 2 or grade == 8:
-        return 2
-
-    # N1: Old JLPT level 1 OR everything else
-    if old_jlpt == 1:
-        return 1
-
-    # Default to N1 for anything else
+    # Everything else = N1 (hardest)
     return 1
 
 

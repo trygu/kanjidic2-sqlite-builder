@@ -92,13 +92,18 @@ erDiagram
     }
 
     kanji_seed {
-        TEXT literal PK "View: export-ready format"
-        TEXT readings_on "Semicolon-separated on readings"
-        TEXT readings_kun "Semicolon-separated kun readings"
-        TEXT meanings_en "Semicolon-separated meanings"
+        TEXT literal PK "View: quiz-ready format"
+        INTEGER lvl "JLPT level (5=N5, 4=N4, 3=N3, 2=N2, 1=N1)"
         INTEGER freq "Frequency rank"
         INTEGER grade "School grade"
-        INTEGER jlpt "JLPT level"
+        TEXT main_meaning "Primary English meaning"
+        TEXT on_prime "On readings (・-separated)"
+        TEXT kun_prime "Kun readings (・-separated)"
+    }
+
+    distractor_pool {
+        INTEGER lvl "View: JLPT level for distractors"
+        TEXT meaning "English meaning for quiz distractors"
     }
 
     kanji ||--o{ kanji_radical : contains
@@ -151,10 +156,15 @@ erDiagram
   - **Key field**: `priority_score` (lower = higher priority)
   - **Best for**: Apps that need "what should I learn next?" logic
 
-- **`kanji_seed`** - **Development-friendly format**
-  - **Purpose**: Complete kanji info in one row with concatenated readings/meanings
-  - **Format**: Semicolon-separated strings, no JOINs required
-  - **Best for**: Rapid prototyping, mobile app data loading, CSV exports
+- **`kanji_seed`** - **Quiz application contract**
+  - **Purpose**: One row per kanji with normalized JLPT levels and clean data for quiz generation
+  - **Key fields**: `lvl` (5=N5, 4=N4, 3=N3, 2=N2, 1=N1), `main_meaning`, `on_prime`, `kun_prime`
+  - **Best for**: Quiz apps that need fast random kanji selection by JLPT level
+
+- **`distractor_pool`** - **Quiz distractor generation**
+  - **Purpose**: Pool of meanings by JLPT level for generating wrong answer choices
+  - **Key fields**: `lvl`, `meaning`
+  - **Best for**: Quiz apps that need to generate plausible wrong answers
 
 ### Modern JLPT Mapping
 
@@ -162,9 +172,11 @@ The database includes an intelligent JLPT level mapping system that converts his
 
 - **N5 (Level 5)**: Grade 1-2 kanji + high-frequency characters (easiest)
 - **N4 (Level 4)**: Grade 3-4 kanji + historical JLPT level 4
-- **N3 (Level 3)**: Grade 5-6 kanji + historical JLPT level 3
+- **N3 (Level 3)**: Grade 5-6 kanji + historical JLPT level 3  
 - **N2 (Level 2)**: Historical JLPT level 2 + common secondary kanji
 - **N1 (Level 1)**: Historical JLPT level 1 + advanced kanji (hardest)
+
+**App Contract**: The `lvl` column in views uses reversed numbering (5=N5, 4=N4, 3=N3, 2=N2, 1=N1) to match common app expectations where higher numbers = easier levels.
 
 This ensures your applications get practical N5 data (338 kanji) for modern Japanese learning, even though the original KANJIDIC2 only had levels 1-4.## Command Line Usage
 
@@ -213,103 +225,61 @@ Export Options:
 
 ### Generate Production Artifacts
 
-The artifacts command generates a complete package of production-ready files for distribution:
+The artifacts command generates a quiz-focused package optimized for kanji learning applications:
 
 ```bash
-# Generate all artifacts with default 200 kanji seed files
+# Generate artifacts in output directory (recommended workflow)
+make artifacts
+
+# Or generate artifacts manually to different location
 k2sqlite artifacts --db output/kanjidic2.sqlite --output-dir dist/
 
-# Generate artifacts with custom seed limit and version
-k2sqlite artifacts --db output/kanjidic2.sqlite --output-dir releases/v1.0 --seed-limit 500 --version "v1.0.0"
+# Generate artifacts with custom version
+k2sqlite artifacts --db output/kanjidic2.sqlite --output-dir output --version "v1.0.0"
 ```
 
 **Generated Files**:
-- `kanjidic2.sqlite` - Complete database copy
-- `kanji_seed.csv` - Top N kanji by frequency (CSV format)
-- `kanji_seed.json` - Top N kanji by frequency (JSON format)
-- `map_char_to_meaning.json` - Character → meanings lookup map
-- `map_char_to_readings.json` - Character → readings lookup map
-- `manifest.json` - File inventory with SHA256 checksums
+- `kanjidic2.sqlite` - Complete database with quiz-oriented views (`kanji_seed`, `distractor_pool`) and indexes
+- `manifest.json` - Database metadata with JLPT level counts and quality metrics
 
 Artifacts Options:
 - `--db`, `-d` - SQLite database path (required)
-- `--output-dir`, `-o` - Output directory (default: artifacts/)
-- `--seed-limit`, `-l` - Number of kanji in seed files (default: 200)
+- `--output-dir`, `-o` - Output directory (default: output)
 - `--version`, `-v` - Version string for manifest (default: local-build)
 
-### MCQ Generator (Bonus Tool)
+### App Contract SQL Queries
 
-Generate multiple-choice quiz questions from the database using the included script:
+The database includes optimized views for quiz applications:
 
-```bash
-# Generate 50 questions of each type using top 500 kanji
-python scripts/generate_mcq.py --db output/kanjidic2.sqlite --count 50 --output quiz_data --kanji-limit 500
+```sql
+-- Pick a random kanji for quiz
+SELECT * FROM kanji_seed WHERE lvl=? ORDER BY RANDOM() LIMIT 1;
+
+-- Get distractors for multiple choice
+SELECT meaning FROM distractor_pool WHERE lvl=? AND meaning<>? ORDER BY RANDOM() LIMIT 3;
 ```
 
-**Generated Question Types**:
-- Meaning → Character ("What kanji means 'water'?")
-- Character → Meaning ("What does 水 mean?")
-- Character → Kun Reading ("How do you read 水 (kun)?")
-- Character → On Reading ("How do you read 水 (on)?")
+**View Schema**:
+- `kanji_seed`: literal, lvl (5=N5, 4=N4, 3=N3, 2=N2, 1=N1), freq, grade, main_meaning, on_prime, kun_prime
+- `distractor_pool`: lvl, meaning
 
-**Output Files**:
-- `all_questions.json` - All questions combined
-- `meaning_to_char.json` - Meaning to character questions
-- `char_to_meaning.json` - Character to meaning questions
-- `kun_readings.json` - Kun reading questions
-- `on_readings.json` - On reading questions
+**Example Usage**:
+```python
+import sqlite3
+con = sqlite3.connect('output/kanjidic2.sqlite')
 
-## Utility Scripts
+# Get N5 kanji for quiz
+cur = con.execute("SELECT * FROM kanji_seed WHERE lvl=5 ORDER BY RANDOM() LIMIT 1")
+kanji = cur.fetchone()  # ('雨', 5, 950, 1, 'rain', 'ウ', 'さめ・あま-・あめ')
 
-The `scripts/` directory contains additional tools for specialized data generation and analysis:
-
-### Schema Documentation Generator
-Generate comprehensive database schema documentation:
-
-```bash
-python scripts/generate_schema_docs.py --db output/kanjidic2.sqlite --output docs/
+# Get distractors for this kanji
+cur = con.execute("SELECT meaning FROM distractor_pool WHERE lvl=5 AND meaning<>? ORDER BY RANDOM() LIMIT 3", (kanji[4],))
+distractors = [row[0] for row in cur.fetchall()]  # ['science', 'many', 'part']
 ```
-
-**Generated Files**:
-- `DATABASE_SCHEMA.md` - Complete schema documentation with sample data
-- `SQL_EXAMPLES.md` - Practical SQL query examples with results
-- `schema.json` - Machine-readable schema definition
-
-### Specialized Lookup Generator
-Create targeted datasets for specific use cases:
-
-```bash
-# Generate all lookup categories
-python scripts/generate_lookups.py --db output/kanjidic2.sqlite --output lookups/
-
-# Generate only specific categories
-python scripts/generate_lookups.py --db output/kanjidic2.sqlite --categories grades jlpt
-```
-
-**Generated Categories**:
-- `grades/` - Kanji by school grade levels (1-6)
-- `jlpt/` - Kanji by JLPT levels (N5-N1)
-- `frequency/` - Kanji by frequency rankings (top 100, 500, 1000, 2000)
-- `readings/` - Kanji grouped by reading patterns
-
-### Manifest Generator
-Create detailed file manifests with checksums and metadata:
-
-```bash
-# Basic manifest
-python scripts/generate_manifest.py --dir artifacts/ --version "v1.0.0"
-
-# Include SHA256 checksums and API manifest
-python scripts/generate_manifest.py --dir artifacts/ --include-checksums --api-manifest
-```
-
-**Generated Files**:
-- `manifest.json` - Complete file inventory with metadata and optional checksums
-- `api_manifest.json` - API-focused manifest for web services
 
 ## Automated Builds
 
-This project uses GitHub Actions to automatically build and test the SQLite database with full production artifacts:
+This project uses GitHub Actions to automatically build and test the SQLite database with quiz-focused artifacts:
 
 - **On every push/PR**: Database is built, tested, and production artifacts generated
 - **On releases**: Database and complete artifact package attached to GitHub releases
@@ -404,26 +374,28 @@ WHERE grade BETWEEN 1 AND 6
 GROUP BY grade
 ORDER BY grade;
 
--- JLPT study sets
-SELECT literal, meanings_en, readings_on, freq
+-- JLPT study sets (using new lvl column format)
+SELECT literal, main_meaning, on_prime, kun_prime, freq
 FROM kanji_seed
-WHERE jlpt = 5  -- N5 level kanji (easiest)
-ORDER BY freq;
+WHERE lvl = 5  -- N5 level kanji (easiest)
+  AND freq IS NOT NULL  -- Only kanji with frequency data
+ORDER BY freq
+LIMIT 20;
 
--- All JLPT levels with counts
-SELECT jlpt,
-       CASE jlpt
-         WHEN 1 THEN 'N1 (hardest)'
-         WHEN 2 THEN 'N2'
-         WHEN 3 THEN 'N3'
-         WHEN 4 THEN 'N4'
+-- All JLPT levels with counts (using new lvl format)
+SELECT lvl, 
+       CASE lvl 
          WHEN 5 THEN 'N5 (easiest)'
+         WHEN 4 THEN 'N4' 
+         WHEN 3 THEN 'N3'
+         WHEN 2 THEN 'N2'
+         WHEN 1 THEN 'N1 (hardest)'
        END as level_name,
-       COUNT(*) as kanji_count
-FROM kanji
-WHERE jlpt IS NOT NULL
-GROUP BY jlpt
-ORDER BY jlpt;
+       COUNT(*) as kanji_count,
+       COUNT(CASE WHEN freq IS NOT NULL THEN 1 END) as with_frequency
+FROM kanji_seed 
+GROUP BY lvl 
+ORDER BY lvl DESC;
 ```
 
 ### Quiz Generation Queries
@@ -528,10 +500,27 @@ SELECT literal, readings_on, readings_kun, meanings_en, priority_score
 FROM kanji_priority
 LIMIT 10;
 
--- Export data for offline mobile app
-SELECT * FROM kanji_seed
-WHERE freq <= 1000  -- Top 1000 most common
-ORDER BY freq;
+-- Quiz app: Pick a random kanji for level N4
+SELECT * FROM kanji_seed WHERE lvl = 4 ORDER BY RANDOM() LIMIT 1;
+
+-- Quiz app: Get distractor meanings for N4 level (excluding correct answer)
+SELECT meaning FROM distractor_pool 
+WHERE lvl = 4 AND meaning != 'water' 
+ORDER BY RANDOM() LIMIT 3;
+
+-- Quiz app: Level distribution for UI
+SELECT lvl, 
+       CASE lvl 
+         WHEN 5 THEN 'N5 (easiest)'
+         WHEN 4 THEN 'N4' 
+         WHEN 3 THEN 'N3'
+         WHEN 2 THEN 'N2'
+         WHEN 1 THEN 'N1 (hardest)'
+       END as level_name,
+       COUNT(*) as kanji_count
+FROM kanji_seed 
+GROUP BY lvl 
+ORDER BY lvl DESC;
 ```
 
 ## Requirements

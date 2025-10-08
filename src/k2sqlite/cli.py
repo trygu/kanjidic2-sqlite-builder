@@ -11,7 +11,24 @@ from .builder import build_sqlite
 def export_data(
     db_path: Path, view: str, format: str, output_path: Path | None, limit: int | None
 ):
-    """Export data from database view to CSV or JSON."""
+    """Export     # Copy database to output dir if different locations
+    import shutil
+
+    db_dest = output_dir / "kanjidic2.sqlite"
+    if db_path.resolve() != db_dest.resolve():
+        shutil.copy2(db_path, db_dest)
+        print(f"Copied database to {db_dest}")
+    else:
+        print(f"Database already in place: {db_dest}")
+
+    # Generate manifest with quality metrics
+    manifest = generate_manifest(output_dir, db_path, version)
+
+    print("✅ Quiz artifacts generated:")
+    print(f"📁 Database: {db_dest}")
+    print(f"📊 Quality checks passed: {all(v == 0 for v in manifest['quality_checks'].values())}")
+    print(f"🎯 JLPT levels available: {list(manifest['jlpt_levels'].keys())}")
+    print("🛠️ App contract SQL queries included in manifest.json")ase view to CSV or JSON."""
     import sys
 
     conn = sqlite3.connect(db_path)
@@ -189,75 +206,97 @@ def generate_mcq_samples(db_path: Path, output_dir: Path, kanji_limit: int = 200
     print(f"Generated {len(sample_questions)} sample MCQ questions")
 
 
-def generate_manifest(output_dir: Path, version: str = None):
-    """Generate manifest.json with file checksums."""
-    artifact_files = [
-        "kanji_seed.csv",
-        "kanji_seed.json",
-        "map_char_to_meaning.json",
-        "map_char_to_readings.json",
-        "kanjidic2.sqlite",
-    ]
-
+def generate_manifest(output_dir: Path, db_path: Path, version: str = None):
+    """Generate manifest.json with database quality metrics."""
+    import sqlite3
+    
+    # Get database statistics
+    conn = sqlite3.connect(db_path)
+    
+    # Level distribution
+    level_stats = {}
+    for row in conn.execute("""
+        SELECT lvl, COUNT(*) as total, 
+               COUNT(CASE WHEN freq IS NOT NULL THEN 1 END) as with_freq
+        FROM kanji_seed GROUP BY lvl ORDER BY lvl DESC
+    """):
+        level_name = {5: 'N5', 4: 'N4', 3: 'N3', 2: 'N2', 1: 'N1'}[row[0]]
+        level_stats[level_name] = {"total": row[1], "with_frequency": row[2]}
+    
+    # Quality checks
+    quality_checks = {}
+    
+    # Check for missing meanings
+    no_meaning = conn.execute("SELECT COUNT(*) FROM kanji_seed WHERE main_meaning IS NULL OR main_meaning = ''").fetchone()[0]
+    quality_checks["kanji_without_meaning"] = no_meaning
+    
+    # Check for duplicates
+    duplicates = conn.execute("""
+        SELECT COUNT(*) FROM (
+            SELECT literal, COUNT(*) FROM kanji_seed GROUP BY literal HAVING COUNT(*) > 1
+        )
+    """).fetchone()[0]
+    quality_checks["duplicate_literals"] = duplicates
+    
+    conn.close()
+    
     def sha256_file(filepath):
+        import hashlib
         h = hashlib.sha256()
         with open(filepath, "rb") as f:
             for chunk in iter(lambda: f.read(65536), b""):
                 h.update(chunk)
         return h.hexdigest()
 
-    manifest = {"version": version or "local-build", "files": []}
-
-    for filename in artifact_files:
-        filepath = output_dir / filename
-        if filepath.exists():
-            manifest["files"].append(
-                {
-                    "name": filename,
-                    "bytes": filepath.stat().st_size,
-                    "sha256": sha256_file(filepath),
-                }
-            )
+    manifest = {
+        "version": version or "local-build",
+        "database": {
+            "file": "kanjidic2.sqlite",
+            "bytes": db_path.stat().st_size,
+            "sha256": sha256_file(db_path)
+        },
+        "jlpt_levels": level_stats,
+        "quality_checks": quality_checks,
+        "views": ["kanji_seed", "distractor_pool", "kanji_priority"],
+        "app_contract": {
+            "pick_random_kanji": "SELECT * FROM kanji_seed WHERE lvl=? ORDER BY RANDOM() LIMIT 1",
+            "get_distractors": "SELECT meaning FROM distractor_pool WHERE lvl=? AND meaning<>? ORDER BY RANDOM() LIMIT 3"
+        }
+    }
 
     with open(output_dir / "manifest.json", "w") as f:
         json.dump(manifest, f, indent=2)
 
-    print(f"Generated manifest.json with {len(manifest['files'])} files")
+    print(f"Generated manifest.json with quality metrics")
+    return manifest
 
 
 def generate_artifacts(
     db_path: Path, output_dir: Path, seed_limit: int = 200, version: str = None
 ):
-    """Generate all production artifacts."""
+    """Generate quiz-focused production artifacts."""
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"Generating artifacts in {output_dir}")
+    print(f"Generating quiz-focused artifacts in {output_dir}")
 
-    # Copy database to output dir
+    # Copy database to output dir if different locations
     import shutil
 
     db_dest = output_dir / "kanjidic2.sqlite"
-    shutil.copy2(db_path, db_dest)
-    print(f"Copied database to {db_dest}")
+    if db_path.resolve() != db_dest.resolve():
+        shutil.copy2(db_path, db_dest)
+        print(f"Copied database to {db_dest}")
+    else:
+        print(f"Database already in place: {db_dest}")
 
-    # Generate seed files
-    seed_csv = output_dir / "kanji_seed.csv"
-    seed_json = output_dir / "kanji_seed.json"
+    # Generate manifest with quality metrics
+    manifest = generate_manifest(output_dir, db_path, version)
 
-    export_data(db_path, "kanji_seed", "csv", seed_csv, seed_limit)
-    export_data(db_path, "kanji_seed", "json", seed_json, seed_limit)
-
-    # Generate lookup maps
-    generate_lookup_maps(db_path, output_dir)
-
-    # Generate MCQ files
-    generate_mcq_samples(db_path, output_dir, seed_limit)
-
-    # Generate manifest
-    generate_manifest(output_dir, version)
-
-    print(f"✅ All artifacts generated in {output_dir}")
-    print(f"📊 Seed files contain {seed_limit} top kanji")
+    print("✅ Quiz artifacts generated:")
+    print(f"📁 Database: {db_dest}")
+    print(f"📊 Quality checks passed: {all(v == 0 for v in manifest['quality_checks'].values())}")
+    print(f"🎯 JLPT levels available: {list(manifest['jlpt_levels'].keys())}")
+    print("� App contract SQL queries included in manifest.json")
 
 
 def app():
