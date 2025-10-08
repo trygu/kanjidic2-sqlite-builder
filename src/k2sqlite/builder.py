@@ -131,9 +131,10 @@ def ensure_schema(conn: sqlite3.Connection):
         CREATE INDEX IF NOT EXISTS idx_kanji_seed_lvl ON kanji(jlpt) WHERE jlpt IS NOT NULL;
         CREATE INDEX IF NOT EXISTS idx_kanji_seed_literal ON kanji(literal);
         CREATE INDEX IF NOT EXISTS idx_meaning_for_distractor ON kanji_meaning(meaning) WHERE lang = 'en';
-        CREATE INDEX IF NOT EXISTS idx_seed_lvl ON kanji_seed(lvl);
-        CREATE INDEX IF NOT EXISTS idx_seed_lit ON kanji_seed(literal);
-        CREATE INDEX IF NOT EXISTS idx_pool_lvl ON distractor_pool(lvl);
+        -- Removed invalid indexes on views
+        -- CREATE INDEX IF NOT EXISTS idx_seed_lvl ON kanji_seed(lvl);
+        -- CREATE INDEX IF NOT EXISTS idx_seed_lit ON kanji_seed(literal);
+        -- CREATE INDEX IF NOT EXISTS idx_pool_lvl ON distractor_pool(lvl);
 
         -- Finalize database with PRAGMA and ANALYZE
         PRAGMA journal_mode=WAL;
