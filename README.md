@@ -360,7 +360,7 @@ ORDER BY k.freq;
 ### Learning Curriculum Queries
 ```sql
 -- Get learning progression: most common kanji first
-SELECT literal, readings_on, readings_kun, meanings_en, freq
+SELECT literal, main_meaning, on_prime, kun_prime, freq
 FROM kanji_seed
 WHERE freq IS NOT NULL
 ORDER BY freq
@@ -398,72 +398,6 @@ GROUP BY lvl
 ORDER BY lvl DESC;
 ```
 
-### Quiz Generation Queries
-```sql
--- Generate multiple choice distractors (same grade level)
-SELECT k1.literal as target,
-       k2.literal as distractor,
-       k1.grade, k2.freq
-FROM kanji k1, kanji k2
-WHERE k1.literal = '水'
-  AND k2.grade = k1.grade
-  AND k2.literal != k1.literal
-  AND k2.freq IS NOT NULL
-ORDER BY k2.freq
-LIMIT 3;
-
--- Find kanji with similar stroke counts for visual confusion
-SELECT k1.literal as target,
-       k2.literal as similar_looking,
-       k1.stroke_count, k2.stroke_count,
-       ABS(k1.stroke_count - k2.stroke_count) as stroke_diff
-FROM kanji k1, kanji k2
-WHERE k1.literal = '人'
-  AND ABS(k1.stroke_count - k2.stroke_count) <= 1
-  AND k1.literal != k2.literal
-  AND k2.freq <= 1000  -- Only common kanji
-ORDER BY stroke_diff, k2.freq;
-
--- Reading confusion pairs (same reading, different kanji)
-SELECT r1.literal as kanji1, r2.literal as kanji2, r1.reading
-FROM kanji_reading r1, kanji_reading r2
-WHERE r1.reading = r2.reading
-  AND r1.type = r2.type
-  AND r1.literal != r2.literal
-  AND r1.reading = 'コウ'  -- Example: 高, 校, 考, etc.
-ORDER BY r1.literal;
-```
-
-### Progress Tracking Queries
-```sql
--- Kanji distribution by difficulty
-SELECT
-  CASE
-    WHEN freq <= 100 THEN 'Very Common (1-100)'
-    WHEN freq <= 500 THEN 'Common (101-500)'
-    WHEN freq <= 1000 THEN 'Intermediate (501-1000)'
-    ELSE 'Advanced (1000+)'
-  END as difficulty,
-  COUNT(*) as kanji_count
-FROM kanji
-WHERE freq IS NOT NULL
-GROUP BY
-  CASE
-    WHEN freq <= 100 THEN 'Very Common (1-100)'
-    WHEN freq <= 500 THEN 'Common (101-500)'
-    WHEN freq <= 1000 THEN 'Intermediate (501-1000)'
-    ELSE 'Advanced (1000+)'
-  END;
-
--- Find kanji missing readings (data quality check)
-SELECT k.literal, k.grade, k.freq
-FROM kanji k
-LEFT JOIN kanji_reading r ON k.literal = r.literal
-WHERE r.literal IS NULL
-  AND k.freq IS NOT NULL
-ORDER BY k.freq;
-```
-
 ### Advanced Analysis
 ```sql
 -- Most common radicals across all kanji
@@ -485,9 +419,9 @@ ORDER BY reading_count DESC
 LIMIT 20;
 
 -- Find "gateway" kanji (common + low grade = good for beginners)
-SELECT literal, meanings_en, readings_on, freq, grade,
+SELECT literal, freq, grade,
        (1000 - freq) + (10 - grade) as beginner_score
-FROM kanji_seed
+FROM kanji
 WHERE freq IS NOT NULL AND grade IS NOT NULL
 ORDER BY beginner_score DESC
 LIMIT 50;
@@ -496,7 +430,7 @@ LIMIT 50;
 ### Using Views for App Development
 ```sql
 -- Priority-based learning queue
-SELECT literal, on_prime, kun_prime, main_meaning, priority_score
+SELECT literal, priority_score
 FROM kanji_priority
 LIMIT 10;
 

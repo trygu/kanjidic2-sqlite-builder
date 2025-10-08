@@ -141,6 +141,9 @@ def ensure_schema(conn: sqlite3.Connection):
         PRAGMA synchronous=NORMAL;
         VACUUM;
         ANALYZE;
+
+        -- Added schema versioning for tracking
+        PRAGMA user_version=1001;
         """
     )
     conn.commit()
