@@ -77,9 +77,16 @@ def ensure_schema(conn: sqlite3.Connection):
             k.stroke_count,
             k.freq,
             k.jlpt,
-            (SELECT GROUP_CONCAT(reading, ';') FROM kanji_reading WHERE literal = k.literal AND type = 'on') as readings_on,
-            (SELECT GROUP_CONCAT(reading, ';') FROM kanji_reading WHERE literal = k.literal AND type = 'kun') as readings_kun,
-            (SELECT GROUP_CONCAT(meaning, ';') FROM kanji_meaning WHERE literal = k.literal AND lang = 'en') as meanings_en,
+            (SELECT m.meaning
+             FROM kanji_meaning m
+             WHERE m.literal = k.literal AND m.lang = 'en'
+             LIMIT 1) as main_meaning,
+            COALESCE((SELECT GROUP_CONCAT(r.reading, '・')
+                     FROM kanji_reading r
+                     WHERE r.literal = k.literal AND r.type = 'on'), '') as on_prime,
+            COALESCE((SELECT GROUP_CONCAT(r.reading, '・')
+                     FROM kanji_reading r
+                     WHERE r.literal = k.literal AND r.type = 'kun'), '') as kun_prime,
             -- Priority score: freq (lower=better), then grade, then jlpt
             CASE
                 WHEN k.freq IS NOT NULL THEN k.freq
@@ -91,29 +98,29 @@ def ensure_schema(conn: sqlite3.Connection):
         ORDER BY priority_score, k.literal;
 
         -- App contract: kanji_seed view for quiz generation
-        CREATE VIEW kanji_seed AS 
-        SELECT 
+        CREATE VIEW kanji_seed AS
+        SELECT
             k.literal,
             k.jlpt as lvl,  -- N5=5, N4=4, N3=3, N2=2, N1=1
             k.freq,
             k.grade,
-            (SELECT m.meaning 
-             FROM kanji_meaning m 
+            (SELECT m.meaning
+             FROM kanji_meaning m
              WHERE m.literal = k.literal AND m.lang = 'en'
              LIMIT 1) as main_meaning,
-            COALESCE((SELECT GROUP_CONCAT(r.reading, '・') 
-                     FROM kanji_reading r 
+            COALESCE((SELECT GROUP_CONCAT(r.reading, '・')
+                     FROM kanji_reading r
                      WHERE r.literal = k.literal AND r.type = 'on'), '') as on_prime,
-            COALESCE((SELECT GROUP_CONCAT(r.reading, '・') 
-                     FROM kanji_reading r 
+            COALESCE((SELECT GROUP_CONCAT(r.reading, '・')
+                     FROM kanji_reading r
                      WHERE r.literal = k.literal AND r.type = 'kun'), '') as kun_prime
-        FROM kanji k 
-        WHERE k.jlpt IS NOT NULL 
+        FROM kanji k
+        WHERE k.jlpt IS NOT NULL
         AND EXISTS (SELECT 1 FROM kanji_meaning m WHERE m.literal = k.literal AND m.lang = 'en');
 
         -- App contract: distractor pool for quiz generation
         CREATE VIEW distractor_pool AS
-        SELECT 
+        SELECT
             k.jlpt as lvl,  -- N5=5, N4=4, N3=3, N2=2, N1=1
             m.meaning
         FROM kanji k
@@ -124,6 +131,15 @@ def ensure_schema(conn: sqlite3.Connection):
         CREATE INDEX IF NOT EXISTS idx_kanji_seed_lvl ON kanji(jlpt) WHERE jlpt IS NOT NULL;
         CREATE INDEX IF NOT EXISTS idx_kanji_seed_literal ON kanji(literal);
         CREATE INDEX IF NOT EXISTS idx_meaning_for_distractor ON kanji_meaning(meaning) WHERE lang = 'en';
+        CREATE INDEX IF NOT EXISTS idx_seed_lvl ON kanji_seed(lvl);
+        CREATE INDEX IF NOT EXISTS idx_seed_lit ON kanji_seed(literal);
+        CREATE INDEX IF NOT EXISTS idx_pool_lvl ON distractor_pool(lvl);
+
+        -- Finalize database with PRAGMA and ANALYZE
+        PRAGMA journal_mode=WAL;
+        PRAGMA synchronous=NORMAL;
+        VACUUM;
+        ANALYZE;
         """
     )
     conn.commit()
@@ -243,7 +259,7 @@ def _calculate_modern_jlpt(grade, freq, old_jlpt):
     elif old_jlpt == 3:
         return 4  # N4
     elif old_jlpt == 2:
-        return 3  # N3  
+        return 3  # N3
     elif old_jlpt == 1:
         return 2  # N2
 

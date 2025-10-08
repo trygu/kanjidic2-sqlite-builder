@@ -168,11 +168,11 @@ erDiagram
 
 ### Modern JLPT Mapping
 
-The database includes an intelligent JLPT level mapping system that converts historical KANJIDIC2 JLPT data (1-4) into modern JLPT levels (N1-N5):
+The database includes an intelligent JLPT level mapping system that converts historical KANJIDIC2 JLPT data (1-4) into modern JLPT levels (N1-N5). The mapping is materialized in the `lvl` column in `kanji_seed` and `distractor_pool` views. This ensures compatibility with modern learning applications.
 
 - **N5 (Level 5)**: Grade 1-2 kanji + high-frequency characters (easiest)
 - **N4 (Level 4)**: Grade 3-4 kanji + historical JLPT level 4
-- **N3 (Level 3)**: Grade 5-6 kanji + historical JLPT level 3  
+- **N3 (Level 3)**: Grade 5-6 kanji + historical JLPT level 3
 - **N2 (Level 2)**: Historical JLPT level 2 + common secondary kanji
 - **N1 (Level 1)**: Historical JLPT level 1 + advanced kanji (hardest)
 
@@ -383,18 +383,18 @@ ORDER BY freq
 LIMIT 20;
 
 -- All JLPT levels with counts (using new lvl format)
-SELECT lvl, 
-       CASE lvl 
+SELECT lvl,
+       CASE lvl
          WHEN 5 THEN 'N5 (easiest)'
-         WHEN 4 THEN 'N4' 
+         WHEN 4 THEN 'N4'
          WHEN 3 THEN 'N3'
          WHEN 2 THEN 'N2'
          WHEN 1 THEN 'N1 (hardest)'
        END as level_name,
        COUNT(*) as kanji_count,
        COUNT(CASE WHEN freq IS NOT NULL THEN 1 END) as with_frequency
-FROM kanji_seed 
-GROUP BY lvl 
+FROM kanji_seed
+GROUP BY lvl
 ORDER BY lvl DESC;
 ```
 
@@ -496,30 +496,31 @@ LIMIT 50;
 ### Using Views for App Development
 ```sql
 -- Priority-based learning queue
-SELECT literal, readings_on, readings_kun, meanings_en, priority_score
+SELECT literal, on_prime, kun_prime, main_meaning, priority_score
 FROM kanji_priority
 LIMIT 10;
 
 -- Quiz app: Pick a random kanji for level N4
-SELECT * FROM kanji_seed WHERE lvl = 4 ORDER BY RANDOM() LIMIT 1;
+SELECT literal, main_meaning, on_prime, kun_prime
+FROM kanji_seed WHERE lvl = 4 ORDER BY RANDOM() LIMIT 1;
 
 -- Quiz app: Get distractor meanings for N4 level (excluding correct answer)
-SELECT meaning FROM distractor_pool 
-WHERE lvl = 4 AND meaning != 'water' 
+SELECT meaning FROM distractor_pool
+WHERE lvl = 4 AND meaning != 'water'
 ORDER BY RANDOM() LIMIT 3;
 
 -- Quiz app: Level distribution for UI
-SELECT lvl, 
-       CASE lvl 
+SELECT lvl,
+       CASE lvl
          WHEN 5 THEN 'N5 (easiest)'
-         WHEN 4 THEN 'N4' 
+         WHEN 4 THEN 'N4'
          WHEN 3 THEN 'N3'
          WHEN 2 THEN 'N2'
          WHEN 1 THEN 'N1 (hardest)'
        END as level_name,
        COUNT(*) as kanji_count
-FROM kanji_seed 
-GROUP BY lvl 
+FROM kanji_seed
+GROUP BY lvl
 ORDER BY lvl DESC;
 ```
 

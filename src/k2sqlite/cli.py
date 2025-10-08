@@ -209,27 +209,27 @@ def generate_mcq_samples(db_path: Path, output_dir: Path, kanji_limit: int = 200
 def generate_manifest(output_dir: Path, db_path: Path, version: str = None):
     """Generate manifest.json with database quality metrics."""
     import sqlite3
-    
+
     # Get database statistics
     conn = sqlite3.connect(db_path)
-    
+
     # Level distribution
     level_stats = {}
     for row in conn.execute("""
-        SELECT lvl, COUNT(*) as total, 
+        SELECT lvl, COUNT(*) as total,
                COUNT(CASE WHEN freq IS NOT NULL THEN 1 END) as with_freq
         FROM kanji_seed GROUP BY lvl ORDER BY lvl DESC
     """):
         level_name = {5: 'N5', 4: 'N4', 3: 'N3', 2: 'N2', 1: 'N1'}[row[0]]
         level_stats[level_name] = {"total": row[1], "with_frequency": row[2]}
-    
+
     # Quality checks
     quality_checks = {}
-    
+
     # Check for missing meanings
     no_meaning = conn.execute("SELECT COUNT(*) FROM kanji_seed WHERE main_meaning IS NULL OR main_meaning = ''").fetchone()[0]
     quality_checks["kanji_without_meaning"] = no_meaning
-    
+
     # Check for duplicates
     duplicates = conn.execute("""
         SELECT COUNT(*) FROM (
@@ -237,9 +237,9 @@ def generate_manifest(output_dir: Path, db_path: Path, version: str = None):
         )
     """).fetchone()[0]
     quality_checks["duplicate_literals"] = duplicates
-    
+
     conn.close()
-    
+
     def sha256_file(filepath):
         import hashlib
         h = hashlib.sha256()
